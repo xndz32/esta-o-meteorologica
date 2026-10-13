@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini estação meteorológica com ESP32</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --fog:#EDF2F3; --paper:#FBFCFC; --ink:#13272F; --steel:#566B75;
+  --sea:#17687A; --sea-d:#0F4E5C; --amber:#D99A1E; --line:#CBD6DA;
+  --code:#0F2230; --warn:#FFF3D6; --ok:#E3F1EA;
+  --display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:64px;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--fog);color:var(--ink);font:17px/1.6 var(--body)}
+a{color:var(--sea-d)}
+:focus-visible{outline:3px solid var(--sea);outline-offset:2px;border-radius:3px}
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+
+/* navegação */
+nav{position:sticky;top:0;z-index:10;background:var(--paper);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;gap:4px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+nav a{flex:none;padding:15px 12px;text-decoration:none;color:var(--steel);font-weight:700;font-size:15px;border-bottom:3px solid transparent}
+nav a:hover{color:var(--ink);border-bottom-color:var(--amber)}
+
+/* tipografia */
+h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
+h1{font-size:clamp(2.3rem,8vw,3.6rem);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(1.7rem,5vw,2.2rem);font-weight:800;letter-spacing:-.01em;margin-bottom:14px}
+h3{font-size:1.2rem;font-weight:500;margin:26px 0 8px}
+p{margin:0 0 14px;max-width:62ch}
+section{padding:54px 0 10px}
+
+/* herói */
+.hero{padding:34px 0 30px;border-bottom:1px solid var(--line)}
+.hero p.lead{font-size:1.15rem;color:var(--steel);margin-top:14px}
+.bancada{display:grid;grid-template-columns:minmax(140px,210px) 1fr;gap:22px;align-items:center;margin-top:26px;padding:20px;background:var(--paper);border:1px solid var(--line);border-radius:6px}
+.bancada svg{width:100%;height:auto;display:block}
+.leitura{font-family:var(--display);font-size:clamp(2.4rem,9vw,3.4rem);font-weight:800;line-height:1}
+.leitura small{font-size:.4em;font-weight:500;color:var(--steel);margin-left:6px}
+.bancada label{display:block;font-weight:700;margin:12px 0 4px;font-size:15px}
+.bancada .conta{font-family:var(--mono);font-size:13px;color:var(--steel);margin-top:8px}
+input[type=range]{width:100%;accent-color:var(--sea)}
+@media (max-width:520px){.bancada{grid-template-columns:1fr}.bancada svg{max-width:190px;margin:0 auto}}
+
+/* lista de peças */
+.peca{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;padding:16px 0;border-bottom:1px solid var(--line);align-items:start}
+.peca:first-of-type{border-top:1px solid var(--line)}
+.peca input{width:22px;height:22px;margin-top:3px;accent-color:var(--sea)}
+.peca .nome{font-weight:700}
+.peca .onde{color:var(--steel);font-size:15px;margin-top:2px}
+.peca .preco{font-family:var(--mono);font-size:14px;text-align:right;white-space:nowrap;padding-top:3px}
+.tag{display:inline-block;font-size:13px;font-weight:700;padding:1px 9px;border-radius:99px;margin-left:8px;vertical-align:2px}
+.tag.lista{border:1.5px solid var(--sea);color:var(--sea-d)}
+.tag.falta{background:var(--amber);color:#2b1d00}
+.peca.off .nome,.peca.off .preco{opacity:.45;text-decoration:line-through}
+.total{position:sticky;bottom:0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;background:var(--ink);color:#fff;padding:16px 18px;border-radius:6px;margin-top:16px}
+.total strong{font-family:var(--display);font-size:1.7rem;font-weight:800}
+.total span{font-size:15px;opacity:.85}
+@media (max-width:520px){.peca{grid-template-columns:auto 1fr}.peca .preco{grid-column:2;text-align:left}}
+
+/* avisos */
+.aviso{border-left:5px solid var(--amber);background:var(--warn);padding:14px 18px;margin:18px 0;border-radius:0 6px 6px 0}
+.aviso.bom{border-left-color:var(--sea);background:var(--ok)}
+.aviso b{display:block;margin-bottom:2px}
+.aviso p{margin:0}
+.aviso ul{margin:6px 0 0;padding-left:20px}
+
+/* tabelas */
+.tabela{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;min-width:480px;background:var(--paper)}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:16px}
+th{font-family:var(--display);font-weight:500;background:#DCE6E9}
+td code,li code,p code{font-family:var(--mono);font-size:.88em;background:#DCE6E9;padding:1px 6px;border-radius:3px}
+
+/* formulário de ajuste */
+.ajustes{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:18px 0}
+.ajustes label{display:block;font-weight:700;font-size:15px;margin-bottom:4px}
+.ajustes input[type=text],.ajustes input[type=number]{width:100%;padding:11px 12px;font:inherit;border:1.5px solid var(--steel);border-radius:5px;background:var(--paper);color:var(--ink)}
+.ajustes .dica{font-size:14px;color:var(--steel);margin-top:4px}
+
+/* código */
+.barra{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+button,.btn{font:inherit;font-weight:700;padding:11px 18px;border-radius:5px;border:2px solid var(--sea-d);background:var(--sea-d);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
+button:hover,.btn:hover{background:var(--sea)}
+button.sec{background:transparent;color:var(--sea-d)}
+button.sec:hover{background:#DCE6E9}
+pre{margin:0;background:var(--code);color:#D7E5EC;padding:18px;border-radius:6px;overflow:auto;max-height:560px;font:13.5px/1.55 var(--mono);tab-size:2}
+
+/* passos e dúvidas */
+ol.passos{list-style:none;counter-reset:p;padding:0;margin:14px 0}
+ol.passos li{counter-increment:p;position:relative;padding:0 0 18px 48px}
+ol.passos li::before{content:counter(p);position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:var(--sea-d);color:#fff;display:grid;place-items:center;font-weight:700}
+details{background:var(--paper);border:1px solid var(--line);border-radius:6px;margin:8px 0}
+summary{cursor:pointer;padding:14px 16px;font-weight:700}
+details p,details ul{margin:0;padding:0 16px 14px}
+details ul{padding-left:34px}
+.checks label{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.checks input{width:22px;height:22px;accent-color:var(--sea);margin-top:2px;flex:none}
+footer{padding:40px 0 70px;color:var(--steel);font-size:15px}
+</style>
+</head>
+<body>
+
+<nav aria-label="Seções">
+  <div class="wrap">
+    <a href="#comprar">Comprar</a>
+    <a href="#cuidados">Cuidados</a>
+    <a href="#ligar">Ligar</a>
+    <a href="#codigo">Código</a>
+    <a href="#gravar">Gravar</a>
+    <a href="#montar">Montar</a>
+    <a href="#problemas">Problemas</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Mini estação meteorológica</h1>
+    <p class="lead">ESP32, sensor BME280 e anemômetro de 3 copos. Mede vento, temperatura, umidade e pressão e mostra tudo numa página no seu celular, pelo Wi-Fi de casa.</p>
+
+    <div class="bancada">
+      <svg viewBox="0 0 200 200" role="img" aria-label="Anemômetro de três copos girando">
+        <line x1="100" y1="100" x2="100" y2="190" stroke="#566B75" stroke-width="7" stroke-linecap="round"/>
+        <g id="rotor">
+          <g id="copos"></g>
+          <circle cx="100" cy="100" r="9" fill="#13272F"/>
+        </g>
+      </svg>
+      <div>
+        <div class="leitura"><span id="kmh">0,0</span><small>km/h</small></div>
+        <label for="hz">Voltas por segundo (pulsos no GPIO 14)</label>
+        <input type="range" id="hz" min="0" max="12" step="0.1" value="2.5">
+        <div class="conta" id="conta"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- COMPRAR -->
+<section id="comprar">
+  <h2>O que comprar</h2>
+  <p>Desmarque o que você já tem e o total se ajusta. As peças marcadas como "faltava" não estavam na lista anterior, mas fazem diferença na prática.</p>
+  <div id="lista"></div>
+  <div class="total" aria-live="polite">
+    <span>Total estimado</span>
+    <strong id="total">R$ 0</strong>
+  </div>
+  <p style="margin-top:14px;color:var(--steel);font-size:15px">Os preços são aproximados e mudam com frete e vendedor. Os valores das peças "faltava" são estimativas minhas. Importando do AliExpress, o conjunto principal costuma sair por volta de R$ 180 a R$ 260, já com impostos, mas demora mais.</p>
+</section>
+
+<!-- CUIDADOS -->
+<section id="cuidados">
+  <h2>Cuidados na hora de comprar</h2>
+  <div class="aviso">
+    <b>Anemômetro precisa ser de pulso</b>
+    <p>Escolha o modelo com saída por <strong>Reed Switch / pulso</strong>. Os de saída em tensão (0-5V) ou 4-20mA não funcionam com este código.</p>
+  </div>
+  <div class="aviso">
+    <b>BME280, não BMP280</b>
+    <p>O BMP280 parece igual, mas não mede umidade, e muitos anúncios misturam os dois. Confira o nome na placa e na descrição. Prefira o módulo de 3,3V.</p>
+  </div>
+  <div class="aviso">
+    <b>Wi-Fi de 2,4 GHz</b>
+    <p>O ESP32 não conecta em rede 5 GHz. Se o seu roteador separa as redes, use a de 2,4 GHz.</p>
+  </div>
+  <div class="aviso bom">
+    <b>O sensor BME280 não fica dentro da caixa fechada</b>
+    <p>Dentro de uma caixa hermética ao sol ele vai marcar temperatura e umidade erradas. Deixe só a placa na caixa e coloque o sensor fora, num abrigo ventilado e com sombra (pratos plásticos empilhados com furos funcionam).</p>
+  </div>
+</section>
+
+<!-- LIGAR -->
+<section id="ligar">
+  <h2>Como ligar os fios</h2>
+  <p>Desligue o ESP32 do USB antes de mexer nas ligações.</p>
+  <div class="tabela">
+    <table>
+      <thead><tr><th>Peça</th><th>Fio / pino da peça</th><th>Pino do ESP32</th></tr></thead>
+      <tbody>
+        <tr><td>BME280</td><td>VCC</td><td><code>3V3</code></td></tr>
+        <tr><td>BME280</td><td>GND</td><td><code>GND</code></td></tr>
+        <tr><td>BME280</td><td>SDA</td><td><code>GPIO 21</code></td></tr>
+        <tr><td>BME280</td><td>SCL</td><td><code>GPIO 22</code></td></tr>
+        <tr><td>Anemômetro</td><td>Fio 1</td><td><code>GND</code></td></tr>
+        <tr><td>Anemômetro</td><td>Fio 2</td><td><code>GPIO 14</code></td></tr>
+        <tr><td>Capacitor 100 nF</td><td>Os dois terminais</td><td>Em paralelo com o anemômetro (entre <code>GPIO 14</code> e <code>GND</code>)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>O código ativa o resistor interno de pull-up no GPIO 14, então não precisa de resistor externo. O capacitor é opcional, mas ajuda a evitar leituras falsas do vento (o Reed Switch "treme" ao fechar).</p>
+  <h3>Como funciona</h3>
+  <p>A cada volta, um ímã passa pelo Reed Switch e gera um pulso no GPIO 14. O ESP32 conta os pulsos num intervalo de 2 segundos, converte para km/h e junta com os dados do BME280, lidos por I2C. Ele também cria uma página no seu Wi-Fi com o painel ao vivo.</p>
+</section>
+
+<!-- CÓDIGO -->
+<section id="codigo">
+  <h2>Código pronto</h2>
+  <p>Preencha os campos e o código abaixo se atualiza. Nada sai do seu aparelho: o que você digita fica só nesta página.</p>
+
+  <div class="ajustes">
+    <div>
+      <label for="f-ssid">Nome do seu Wi-Fi</label>
+      <input type="text" id="f-ssid" autocomplete="off" placeholder="NOME_DA_SUA_REDE_WIFI">
+    </div>
+    <div>
+      <label for="f-senha">Senha do Wi-Fi</label>
+      <input type="text" id="f-senha" autocomplete="off" placeholder="SUA_SENHA_WIFI">
+    </div>
+    <div>
+      <label for="fator">Fator do anemômetro</label>
+      <input type="number" id="fator" value="2.4" step="0.01" min="0.1">
+      <div class="dica">km/h para cada 1 pulso por segundo. Veja o manual do seu modelo.</div>
+    </div>
+    <div>
+      <label for="f-deb">Anti-repique (ms)</label>
+      <input type="number" id="f-deb" value="10" step="1" min="0" max="100">
+      <div class="dica">Ignora pulsos mais rápidos que isso. 10 ms serve para a maioria.</div>
+    </div>
+  </div>
+
+  <div class="barra">
+    <button type="button" id="copiar">Copiar código</button>
+    <button type="button" class="sec" id="baixar">Baixar .ino</button>
+  </div>
+  <pre id="codigo-vista" tabindex="0" aria-label="Código do Arduino"></pre>
+  <p style="margin-top:12px;color:var(--steel);font-size:15px">Ao baixar o arquivo, a pasta do projeto no Arduino IDE precisa ter o mesmo nome do arquivo (<code>estacao_meteorologica</code>).</p>
+
+  <h3>O que já melhorei em relação à versão anterior</h3>
+  <ul>
+    <li>Anti-repique do Reed Switch, para não contar pulsos falsos.</li>
+    <li>A contagem não perde mais pulsos enquanto é lida (antes a interrupção era desligada por um instante).</li>
+    <li>Tenta o BME280 nos endereços <code>0x76</code> e <code>0x77</code> e avisa no monitor serial se não achar.</li>
+    <li>Reinicia se o Wi-Fi não conectar em 30 segundos.</li>
+    <li>Mostra o vento máximo desde que ligou, e tem a rota <code>/dados</code> com as leituras em JSON, para você usar em outros projetos.</li>
+  </ul>
+</section>
+
+<!-- GRAVAR -->
+<section id="gravar">
+  <h2>Gravando na placa</h2>
+  <ol class="passos">
+    <li><strong>Instale o Arduino IDE</strong> no computador (o ArduinoDroid no celular não costuma funcionar bem com ESP32, prefira o PC).</li>
+    <li><strong>Adicione a placa ESP32.</strong> Em Arquivo &gt; Preferências, no campo de URLs adicionais de placas, cole o endereço do pacote ESP32 da Espressif (está na documentação oficial deles). Depois abra Ferramentas &gt; Placa &gt; Gerenciador de Placas e instale "esp32".</li>
+    <li><strong>Instale as bibliotecas</strong> em Ferramentas &gt; Gerenciar Bibliotecas: <code>Adafruit BME280 Library</code> e <code>Adafruit Unified Sensor</code>. Se pedir para instalar dependências, aceite.</li>
+    <li><strong>Escolha a placa</strong> "ESP32 Dev Module" e a porta USB em que ela aparece.</li>
+    <li><strong>Cole o código</strong> e clique em Carregar. Se travar em "Connecting...", segure o botão BOOT da placa até começar a gravar.</li>
+    <li><strong>Abra o Monitor Serial</strong> em 115200. Quando o Wi-Fi conectar, ele mostra o endereço IP.</li>
+    <li><strong>No celular ou PC conectado ao mesmo Wi-Fi</strong>, digite o IP no navegador. O painel abre e atualiza sozinho.</li>
+  </ol>
+  <div class="aviso bom">
+    <b>Dica</b>
+    <p>No painel do roteador, reserve um IP fixo para o ESP32. Assim o endereço não muda sempre que ele reiniciar.</p>
+  </div>
+</section>
+
+<!-- MONTAR -->
+<section id="montar">
+  <h2>Montagem final</h2>
+  <ul>
+    <li><strong>Anemômetro no alto</strong> de um mastro, longe de paredes e do telhado, que atrapalham o vento. O ideal é cerca de 2 m acima de qualquer obstáculo próximo, se der.</li>
+    <li><strong>Caixa hermética</strong> só com o ESP32 e as ligações, num lugar coberto. Passe os fios por prensa-cabos e vede com silicone.</li>
+    <li><strong>Sensor BME280</strong> no abrigo ventilado, na sombra e longe do ESP32, que esquenta e altera a temperatura.</li>
+    <li><strong>Alimentação:</strong> carregador de celular de 5V ligado em tomada protegida da chuva. Proteja as emendas de cabos que ficam do lado de fora.</li>
+    <li><strong>Teste tudo na bancada</strong> antes de subir no mastro.</li>
+  </ul>
+
+  <h3>Lista de testes</h3>
+  <div class="checks">
+    <label><input type="checkbox"> Monitor serial mostra o IP, sem erro de BME280</label>
+    <label><input type="checkbox"> Temperatura e umidade parecem razoáveis comparadas com o ambiente</label>
+    <label><input type="checkbox"> Giro o anemômetro com a mão e o vento sobe no painel</label>
+    <label><input type="checkbox"> Parado, o vento volta para 0,0 km/h</label>
+    <label><input type="checkbox"> O painel abre também no celular</label>
+    <label><input type="checkbox"> Tudo vedado antes de instalar do lado de fora</label>
+  </div>
+</section>
+
+<!-- PROBLEMAS -->
+<section id="problemas">
+  <h2>Se algo der errado</h2>
+  <details>
+    <summary>"BME280 nao encontrado" no monitor serial</summary>
+    <ul>
+      <li>Confira SDA no GPIO 21 e SCL no GPIO 22, e se não estão trocados.</li>
+      <li>Veja se o módulo é mesmo BME280 e não BMP280.</li>
+      <li>Verifique se VCC está no 3V3 e se a solda do módulo está boa.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>O vento fica sempre em 0</summary>
+    <ul>
+      <li>Confirme que o anemômetro é de pulso (Reed Switch) e que está ligado entre GPIO 14 e GND.</li>
+      <li>Teste encostando os dois fios um no outro: o valor deve subir.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>O vento marca valores altos sem vento</summary>
+    <ul>
+      <li>Aumente o anti-repique para 15 ou 20 ms.</li>
+      <li>Coloque o capacitor de 100 nF e use fios mais curtos ou trançados.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Não conecta no Wi-Fi</summary>
+    <ul>
+      <li>Use a rede de 2,4 GHz.</li>
+      <li>Confira o nome e a senha, com maiúsculas e minúsculas.</li>
+      <li>Aproxime a placa do roteador para testar o sinal.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>A página não abre no navegador</summary>
+    <ul>
+      <li>O celular precisa estar no mesmo Wi-Fi que o ESP32.</li>
+      <li>Digite o endereço completo, como <code>http://192.168.0.50</code>, com o IP mostrado no monitor serial.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>A temperatura está alta demais</summary>
+    <ul>
+      <li>O sensor está tomando sol ou perto do ESP32. Afaste-o e coloque no abrigo ventilado.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Quero medir direção do vento e chuva</summary>
+    <p>Dá para adicionar, mas precisa de outras peças (biruta com sensor e pluviômetro basculante) e de mais código. Posso montar essa versão depois que a básica estiver funcionando.</p>
+  </details>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">Projeto de estação meteorológica caseira. Confira preços e especificações no anúncio antes de comprar.</div>
+</footer>
+
+<script type="text/plain" id="codigo-modelo">
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include <WiFi.h>
+#include <WebServer.h>
+
+// ===== CONFIGURACOES (ajuste aqui) =====
+const char* ssid     = "__SSID__";
+const char* password = "__SENHA__";
+
+const int   PINO_ANEMOMETRO = 14;            // Um fio no GPIO 14, o outro no GND
+const float FATOR_KMH       = __FATOR__;     // km/h para cada 1 pulso por segundo
+const unsigned long DEBOUNCE_MS  = __DEBOUNCE__; // ignora pulsos mais rapidos que isso
+const unsigned long INTERVALO_MS = 2000;     // intervalo entre leituras
+// =======================================
+
+WebServer server(80);
+Adafruit_BME280 bme;
+bool bmeOk = false;
+
+volatile unsigned long impulsosVento = 0;
+volatile unsigned long ultimoImpulsoMs = 0;
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+unsigned long ultimaLeitura = 0;
+float ventoKMH = 0.0;
+float ventoMaxKMH = 0.0;
+float temperatura = NAN;
+float umidade = NAN;
+float pressao = NAN;
+
+// Chamada a cada volta do anemometro (com anti-repique)
+void IRAM_ATTR contarImpulso() {
+  unsigned long agora = millis();
+  portENTER_CRITICAL_ISR(&mux);
+  if (agora - ultimoImpulsoMs >= DEBOUNCE_MS) {
+    impulsosVento++;
+    ultimoImpulsoMs = agora;
+  }
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+// Calcula o vento e le o BME280
+void atualizarLeituras() {
+  unsigned long agora = millis();
+  unsigned long decorrido = agora - ultimaLeitura;
+  if (decorrido < INTERVALO_MS) return;
+
+  portENTER_CRITICAL(&mux);
+  unsigned long pulsos = impulsosVento;
+  impulsosVento = 0;
+  portEXIT_CRITICAL(&mux);
+
+  ultimaLeitura = agora;
+  float segundos = decorrido / 1000.0;
+  ventoKMH = (pulsos / segundos) * FATOR_KMH;
+  if (ventoKMH > ventoMaxKMH) ventoMaxKMH = ventoKMH;
+
+  if (bmeOk) {
+    temperatura = bme.readTemperature();
+    umidade     = bme.readHumidity();
+    pressao     = bme.readPressure() / 100.0F; // hPa
+  }
+}
+
+String texto(float v) {
+  return isnan(v) ? String("--") : String(v, 1);
+}
+
+String json(float v) {
+  return isnan(v) ? String("null") : String(v, 1);
+}
+
+// Painel web
+void paginaWeb() {
+  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<meta http-equiv='refresh' content='3'>";
+  html += "<title>Mini Estacao Meteorologica</title>";
+  html += "<style>";
+  html += "body{font-family:Arial,sans-serif;background:#1e1e2e;color:#fff;text-align:center;margin:0;padding:20px}";
+  html += "h1{color:#89b4fa}";
+  html += ".card{background:#313244;padding:20px;margin:15px auto;max-width:300px;border-radius:12px}";
+  html += ".valor{font-size:2em;font-weight:bold;color:#a6e3a1}";
+  html += "</style></head><body>";
+  html += "<h1>Estacao Meteorologica</h1>";
+  html += "<div class='card'><div>Velocidade do vento</div><div class='valor'>" + texto(ventoKMH) + " km/h</div></div>";
+  html += "<div class='card'><div>Vento maximo</div><div class='valor'>" + texto(ventoMaxKMH) + " km/h</div></div>";
+  html += "<div class='card'><div>Temperatura</div><div class='valor'>" + texto(temperatura) + " &deg;C</div></div>";
+  html += "<div class='card'><div>Umidade</div><div class='valor'>" + texto(umidade) + " %</div></div>";
+  html += "<div class='card'><div>Pressao atmosferica</div><div class='valor'>" + texto(pressao) + " hPa</div></div>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+// Dados em JSON (http://IP/dados)
+void paginaDados() {
+  String j = "{";
+  j += "\"vento_kmh\":" + json(ventoKMH) + ",";
+  j += "\"vento_max_kmh\":" + json(ventoMaxKMH) + ",";
+  j += "\"temperatura_c\":" + json(temperatura) + ",";
+  j += "\"umidade_pct\":" + json(umidade) + ",";
+  j += "\"pressao_hpa\":" + json(pressao);
+  j += "}";
+  server.send(200, "application/json", j);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PINO_ANEMOMETRO, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(PINO_ANEMOMETRO), contarImpulso, FALLING);
+
+  Wire.begin(21, 22); // SDA, SCL
+  bmeOk = bme.begin(0x76) || bme.begin(0x77);
+  if (!bmeOk) {
+    Serial.println("Erro: BME280 nao encontrado! Confira SDA/SCL e se o modulo e BME280 (nao BMP280).");
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao Wi-Fi");
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - inicio > 30000) {
+      Serial.println("\nFalha no Wi-Fi (use rede 2,4 GHz). Reiniciando...");
+      ESP.restart();
+    }
+  }
+
+  Serial.println("\nWi-Fi conectado!");
+  Serial.print("Endereco IP da estacao: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", paginaWeb);
+  server.on("/dados", paginaDados);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+  atualizarLeituras();
+}
+</script>
+
+<script>
+(function(){
+  /* ---------- Anemômetro animado ---------- */
+  var copos = document.getElementById('copos');
+  var NS = 'http://www.w3.org/2000/svg';
+  [0,120,240].forEach(function(a){
+    var g = document.createElementNS(NS,'g');
+    g.setAttribute('transform','rotate('+a+' 100 100)');
+    var arm = document.createElementNS(NS,'line');
+    arm.setAttribute('x1',100);arm.setAttribute('y1',100);arm.setAttribute('x2',100);arm.setAttribute('y2',40);
+    arm.setAttribute('stroke','#13272F');arm.setAttribute('stroke-width',5);arm.setAttribute('stroke-linecap','round');
+    var cup = document.createElementNS(NS,'path');
+    cup.setAttribute('d','M100 52 A15 15 0 0 1 100 22 Z');
+    cup.setAttribute('fill','#17687A');
+    g.appendChild(arm);g.appendChild(cup);copos.appendChild(g);
+  });
+
+  var hz = document.getElementById('hz');
+  var fator = document.getElementById('fator');
+  var kmh = document.getElementById('kmh');
+  var conta = document.getElementById('conta');
+  var rotor = document.getElementById('rotor');
+  var angulo = 0, ultimo = null;
+  var semMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function fmt(n){ return n.toFixed(1).replace('.',','); }
+  function fatorAtual(){ var f = parseFloat(fator.value); return (f > 0) ? f : 2.4; }
+
+  function atualizaLeitura(){
+    var v = parseFloat(hz.value) * fatorAtual();
+    kmh.textContent = fmt(v);
+    conta.textContent = fmt(parseFloat(hz.value)) + ' pulsos/s × ' + fatorAtual().toString().replace('.',',') + ' = ' + fmt(v) + ' km/h';
+  }
+
+  function gira(t){
+    if (ultimo !== null){
+      var dt = (t - ultimo) / 1000;
+      angulo = (angulo + parseFloat(hz.value) * 360 * 0.25 * dt) % 360;
+      rotor.setAttribute('transform','rotate('+angulo+' 100 100)');
+    }
+    ultimo = t;
+    requestAnimationFrame(gira);
+  }
+
+  hz.addEventListener('input', atualizaLeitura);
+  fator.addEventListener('input', atualizaLeitura);
+  atualizaLeitura();
+  if (!semMovimento) requestAnimationFrame(gira);
+
+  /* ---------- Lista de peças ---------- */
+  var pecas = [
+    {n:'Anemômetro de 3 copos com saída Reed Switch (pulso)', o:'Mercado Livre, Shopee ou AliExpress. Busque "anemômetro Reed Switch" ou "sensor de velocidade do vento 3 copos Arduino".', min:130, max:280, t:'lista'},
+    {n:'Placa ESP32 WROOM DevKit', o:'Mercado Livre, Shopee ou lojas de eletrônica.', min:35, max:45, t:'lista'},
+    {n:'Módulo BME280 (pressão, temperatura e umidade)', o:'Busque "módulo BME280" e confira que não é BMP280.', min:50, max:65, t:'lista'},
+    {n:'Fonte 5V (carregador de celular antigo)', o:'USB micro ou USB-C, o que a sua placa usar. Você já deve ter em casa.', min:0, max:0, t:'lista'},
+    {n:'Jumpers e protoboard (ou placa de solda pequena)', o:'Para ligar os componentes.', min:15, max:25, t:'lista'},
+    {n:'Caixa hermética IP65 (cerca de 11x11 cm)', o:'Para a placa e as ligações ficarem protegidas da chuva.', min:20, max:30, t:'lista'},
+    {n:'Abrigo ventilado para o BME280', o:'Pode ser feito com pratos plásticos empilhados, ou um abrigo de radiação pronto.', min:10, max:30, t:'falta'},
+    {n:'Prensa-cabos', o:'Para os fios entrarem na caixa sem deixar a água passar.', min:5, max:10, t:'falta'},
+    {n:'Mastro e abraçadeiras', o:'Para fixar o anemômetro no alto. Pode ser um cano de PVC.', min:15, max:30, t:'falta'},
+    {n:'Cabos extras (para o anemômetro e o sensor)', o:'Se ficarem longe da caixa. Cabo de 4 vias ou par trançado funciona.', min:10, max:30, t:'falta'},
+    {n:'Capacitor cerâmico de 100 nF', o:'Reduz leituras falsas do Reed Switch. Vende-se em pacotes.', min:1, max:3, t:'falta'},
+    {n:'Cabo USB para gravar e alimentar', o:'Use um que transmita dados, alguns só carregam.', min:0, max:15, t:'falta'}
+  ];
+  var lista = document.getElementById('lista');
+  var totalEl = document.getElementById('total');
+
+  function brl(n){ return 'R$ ' + n.toLocaleString('pt-BR'); }
+
+  pecas.forEach(function(p,i){
+    var row = document.createElement('div');
+    row.className = 'peca';
+    var id = 'p'+i;
+    var preco = p.max === 0 ? 'R$ 0' : brl(p.min) + ' a ' + brl(p.max).replace('R$ ','');
+    row.innerHTML =
+      '<input type="checkbox" id="'+id+'" checked aria-label="Incluir no total">' +
+      '<label for="'+id+'"><div class="nome">'+p.n+'<span class="tag '+p.t+'">'+(p.t==='lista'?'da sua lista':'faltava')+'</span></div>' +
+      '<div class="onde">'+p.o+'</div></label>' +
+      '<div class="preco">'+preco+'</div>';
+    lista.appendChild(row);
+    row.querySelector('input').addEventListener('change', function(e){
+      row.classList.toggle('off', !e.target.checked);
+      somar();
+    });
+  });
+
+  function somar(){
+    var a = 0, b = 0;
+    var rows = lista.querySelectorAll('.peca');
+    pecas.forEach(function(p,i){
+      if (rows[i].querySelector('input').checked){ a += p.min; b += p.max; }
+    });
+    totalEl.textContent = brl(a) + ' a ' + brl(b).replace('R$ ','');
+  }
+  somar();
+
+  /* ---------- Código personalizado ---------- */
+  var modelo = document.getElementById('codigo-modelo').textContent.replace(/^\n/, '');
+  var vista = document.getElementById('codigo-vista');
+  var fSsid = document.getElementById('f-ssid');
+  var fSenha = document.getElementById('f-senha');
+  var fDeb = document.getElementById('f-deb');
+
+  function cstr(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
+
+  function geraCodigo(){
+    var f = fatorAtual();
+    var d = parseInt(fDeb.value, 10);
+    if (isNaN(d) || d < 0) d = 10;
+    return modelo
+      .replace('__SSID__', function(){ return cstr(fSsid.value.trim() || 'NOME_DA_SUA_REDE_WIFI'); })
+      .replace('__SENHA__', function(){ return cstr(fSenha.value || 'SUA_SENHA_WIFI'); })
+      .replace('__FATOR__', f.toString())
+      .replace('__DEBOUNCE__', d.toString());
+  }
+
+  function atualizaCodigo(){ vista.textContent = geraCodigo(); }
+  [fSsid,fSenha,fDeb,fator].forEach(function(el){ el.addEventListener('input', atualizaCodigo); });
+  atualizaCodigo();
+
+  var btnCopiar = document.getElementById('copiar');
+  btnCopiar.addEventListener('click', function(){
+    var txt = geraCodigo();
+    function ok(){ btnCopiar.textContent = 'Código copiado'; setTimeout(function(){ btnCopiar.textContent = 'Copiar código'; }, 2000); }
+    function alternativa(){
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); ok(); } catch(e){ btnCopiar.textContent = 'Selecione e copie manualmente'; }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(ok, alternativa);
+    } else { alternativa(); }
+  });
+
+  document.getElementById('baixar').addEventListener('click', function(){
+    var blob = new Blob([geraCodigo()], {type:'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'estacao_meteorologica.ino';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  });
+})();
+</script>
+</body>
+</html>
